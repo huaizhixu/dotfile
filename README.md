@@ -11,7 +11,7 @@ curl -fLo ~/.vim/autoload/plug.vim --create-dirs \
 下载使用
 
 ```
-wget https://raw.githubusercontent.com/huaizhixu/dotfile/master/.vimrc -O ~/.vimrc
+wget https://raw.githubusercontent.com/huaizhixu/dotfile/master/vim/.vimrc -O ~/.vimrc
 ```
 
 
