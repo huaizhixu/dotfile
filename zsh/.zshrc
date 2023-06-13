@@ -117,8 +117,8 @@ alias lg='lazygit'
 # Modified version where you can press
 # #   - CTRL-O to open with `open` command,
 # #   - CTRL-E or Enter key to open with the $EDITOR
- fo() {
-   IFS=$'\n' out=("$(fzf --preview 'cat {}' --query="$1" --exit-0 --expect=	ctrl-o,ctrl-e)")
+fo() {
+    IFS=$'\n' out=("$(fzf-tmux --query="$1" --exit-0 --expect=ctrl-o,ctrl-e)")
 	key=$(head -1 <<< "$out")
 	file=$(head -2 <<< "$out" | tail -1)
 	if [ -n "$file" ]; then
@@ -141,15 +141,147 @@ fd() {
   cd "$dir"
 }
 
+# fda - including hidden directories
+fda() {
+  local dir
+     dir=$(find ${1:-.} -type d 2> /dev/null | fzf +m) && cd "$dir" 
+ }
+
+
+# fh - repeat history
+fh() {
+   print -z $( ([ -n "$ZSH_NAME" ] && fc -l 1 || history) | fzf +s --tac | sed -E 's/ *[0-9]*\*? *//' | sed -E 's/\\/\\\\/g')
+   }
+
+
+
+
+#
+fzfp() {
+    fzf --preview '[[ $(file --mime {}) =~ binary ]] && echo {} is a binary file || (bat --style=numbers --color=always{} || rougify {}  || highlight -O ansi -l {} || coderay {} || cat {}) 2> /dev/null | head -500'
+}
+
+
+# tm - create new tmux session, or switch to existing one. Works from within tmux too. (@bag-man)
+# # `tm` will allow you to select your tmux session via fzf.
+# # `tm irc` will attach to the irc session (if it exists), else it will create it.
+tm() {
+      [[ -n "$TMUX" ]] && change="switch-client" || change="attach-session"
+        if [ $1 ]; then
+                tmux $change -t "$1" 2>/dev/null || (tmux new-session -d -s $1 && tmux $change -t "$1"); return
+                  fi
+                    session=$(tmux list-sessions -F "#{session_name}" 2>/dev/null | fzf --exit-0) &&  tmux $change -t "$session" || echo "No sessions found."
+                }
+
+
+# fs [FUZZY PATTERN] - Select selected tmux session
+# #   - Bypass fuzzy finder if there's only one match (--select-1)
+# #   - Exit if there's no match (--exit-0)
+fs() {
+   local session
+    session=$(tmux list-sessions -F "#{session_name}" | \
+        fzf --query="$1" --select-1 --exit-0) &&
+    tmux switch-client -t "$session"
+}
+
+
+# zsh; needs setopt re_match_pcre. You can, of course, adapt it to your own shell easily.
+tmuxkillf () {
+    local sessions
+    sessions="$(tmux ls|fzf --exit-0 --multi)"  || return $?
+    local i
+    for i in "${(f@)sessions}"
+    do
+        [[ $i =~ '([^:]*):.*' ]] && {
+            echo "Killing $match[1]"
+            tmux kill-session -t "$match[1]"
+        }
+    done
+}
+
+
+# ftpane - switch pane (@george-b)
+ftpane() {
+  local panes current_window current_pane target target_window target_pane
+  panes=$(tmux list-panes -s -F '#I:#P - #{pane_current_path} #{pane_current_command}')
+  current_pane=$(tmux display-message -p '#I:#P')
+  current_window=$(tmux display-message -p '#I')
+
+  target=$(echo "$panes" | grep -v "$current_pane" | fzf +m --reverse) || return
+
+  target_window=$(echo $target | awk 'BEGIN{FS=":|-"} {print$1}')
+  target_pane=$(echo $target | awk 'BEGIN{FS=":|-"} {print$2}' | cut -c 1)
+
+  if [[ $current_window -eq $target_window ]]; then
+    tmux select-pane -t ${target_window}.${target_pane}
+  else
+    tmux select-pane -t ${target_window}.${target_pane} &&
+    tmux select-window -t $target_window
+  fi
+}
+
+
+
+
+export FZF_DEFAULT_OPTS="--height 33% --layout=reverse --preview '(highlight -O ansi {} || cat {}) 2> /dev/null | head -300'"
+
+
 ##ros config
 #export ROS_HOSTNAME=192.168.1.120
 #export ROS_MASTER_URI=http://192.168.1.120:11311
+#export ROSCONSOLE_FORMAT='[${severity}][${node}] [${function}] line_${line}  ${message}'
+
+
 
 [[ -s /home/cherish/.autojump/etc/profile.d/autojump.sh ]] && source /home/cherish/.autojump/etc/profile.d/autojump.sh
 autoload -U compinit && compinit -u
 
-
 source /home/cherish/code/yuquan/sim_wheel_ball/devel/setup.zsh
 
 alias tree='tree -FCN'
+alias cl='clear'
+##mujoco
+
+
+
+# >>> conda initialize >>>
+# !! Contents within this block are managed by 'conda init' !!
+#__conda_setup="$('/home/cherish/.config/anaconda3/bin/conda' 'shell.zsh' 'hook' 2> /dev/null)"
+#if [ $? -eq 0 ]; then
+#    eval "$__conda_setup"
+#else
+#    if [ -f "/home/cherish/.config/anaconda3/etc/profile.d/conda.sh" ]; then
+#        . "/home/cherish/.config/anaconda3/etc/profile.d/conda.sh"
+#    else
+#        export PATH="/home/cherish/.config/anaconda3/bin:$PATH"
+#    fi
+#fi
+#unset __conda_setup
+# <<< conda initialize <<<
+
+export LD_LIBRARY_PATH=/home/cherish/.mujoco/mujoco210/bin 
+export LD_LIBRARY_PATH=/opt/ros/noetic/lib:$LD_LIBRARY_PATH:/usr/lib/nvidia 
+export PATH="$LD_LIBRARY_PATH:${PATH}" 
+export LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libGLEW.so
+
+export LD_LIBRARY_PATH=/home/cherish/.mujoco/mujoco210/bin${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}
+
+
+source ~/.config/z/z.sh
+
+unalias z
+z() {
+      if [[ -z "$*" ]]; then
+              cd "$(_z -l 2>&1 | fzf +s --tac | sed 's/^[0-9,.]* *//')"
+                else
+                        _last_z_args="$@"
+                            _z "$@"
+                              fi
+                          }
+
+                      zz() {
+                            cd "$(_z -l 2>&1 | sed 's/^[0-9,.]* *//' | fzf -q "$_last_z_args")"
+                        }
+
+
 
